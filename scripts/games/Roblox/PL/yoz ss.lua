@@ -1,40 +1,72 @@
--- ===============================================
--- YOZ SCRIPTSERVICE | PRISON LIFE FULL GUI v2.6
--- • Executor Detection
--- • Random Player Info
--- • Airplane-style Underground TP
--- • Normal TP & Gun TP
--- • Player Mods, Movement, Teleports, Guns, Misc, Visuals
--- • Mobile Joystick Support for Fly/CarFly (Fly is PC-only)
--- ===============================================
+-- ═══════════════════════════════════════════════════════════════════════════════
+--                          YOZ SCRIPTSERVICE | PRISON LIFE v2.6+ (PARTICLES)
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  • ALL Prison Life Locations       • Custom Skybox Maker (Dropdown)
+--  • Atmosphere Editor               • Indoor/Outdoor Ambient Colors
+--  • Feedback System (Webhook)       • PARTICLE BLUR EFFECTS
+--  • Mobile/PC Support               • Underground Airplane TP
+-- ═══════════════════════════════════════════════════════════════════════════════
 
--- REPO (External UI library)
-local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
-
--- SERVICES
-local RunService          = game:GetService("RunService")
-local Players             = game:GetService("Players")
-local UserInputService    = game:GetService("UserInputService")
-local Workspace           = game:GetService("Workspace")
-local StarterGui          = game:GetService("StarterGui")
+-- // SERVICES
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
 local LocalizationService = game:GetService("LocalizationService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
 
--- PLAYER & CHARACTER
-local player = Players.LocalPlayer
-local char   = player.Character or player.CharacterAdded:Wait()
-local hum    = char:WaitForChild("Humanoid")
-local hrp    = char:WaitForChild("HumanoidRootPart")
+-- // PLAYER REFERENCES
+local Player = Players.LocalPlayer
+local Mouse = Player:GetMouse()
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
 
--- DETECT EXECUTOR
-local function detectExecutor()
-    if type(syn)=="table" and syn.protect_gui then
-        return "Synapse X"
-    elseif type(pebc_execute)=="function" or _G.krnl then
-        return "Krnl"
-    elseif type(is_sirhurt_closure)=="boolean" then
-        return "Sirhurt"
-    elseif type(secure_load)=="function" then
-        return "ScriptWare"
+-- // EXECUTOR DETECTION (FIXED)
+local Executor = ({
+    [syn] = "Synapse X", [pebc_execute] = "Krnl", [_G.krnl] = "Krnl",
+    [is_sirhurt_closure] = "Sirhurt", [secure_load] = "ScriptWare",
+    [getexecutorname] = getexecutorname and getexecutorname(), 
+    [getexecutor] = getexecutor and getexecutor()
+})[next({syn and syn.protect_gui, pebc_execute, _G.krnl, is_sirhurt_closure, secure_load, getexecutorname, getexecutor})] or "Unknown"
+
+-- // PLATFORM DETECTION (FIXED)
+local IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local IsPC = not IsMobile
+
+-- // MOBILE FLY SUPPORT (FIXED)
+local MobileUp = false
+UserInputService.JumpRequest:Connect(function()
+    if IsMobile and Toggles?.Fly?.Value then MobileUp = true end
+end)
+
+-- // LOAD UI LIBRARY
+StarterGui:SetCore("SendNotification", {
+    Title = "Yoz ScriptService", Text = "Loading complete edition with particles...", Duration = 3
+})
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"))()
+local Toggles = Library.Toggles
+local Options = Library.Options
+
+-- // UI COLORS (20+ STYLES)
+local ColorPresets = {
+    {Name="Dark", Primary=Color3.fromRGB(25,25,35), Secondary=Color3.fromRGB(45,45,60), Accent=Color3.fromRGB(100,150,255)},
+    {Name="Dark Blue", Primary=Color3.fromRGB(20,25,40), Secondary=Color3.fromRGB(40,50,70), Accent=Color3.fromRGB(70,120,255)},
+    {Name="Dark Red", Primary=Color3.fromRGB(35,20,20), Secondary=Color3.fromRGB(60,40,40), Accent=Color3.fromRGB(255,100,100)},
+    {Name="Dark Green", Primary=Color3.fromRGB(20,35,25), Secondary=Color3.fromRGB(40,60,45), Accent=Color3.fromRGB(100,255,120)},
+    {Name="Matrix", Primary=Color3.fromRGB(0,15,10), Secondary=Color3.fromRGB(20,40,25), Accent=Color3.fromRGB(0,255,100)},
+    {Name="Nord", Primary=Color3.fromRGB(46,52,64), Secondary=Color3.fromRGB(67,76,94), Accent=Color3.fromRGB(88,110,211)},
+    {Name="Dracula", Primary=Color3.fromRGB(40,42,54), Secondary=Color3.fromRGB(57,62,79), Accent=Color3.fromRGB(255,107,107)},
+    {Name="Monokai", Primary=Color3.fromRGB(39,40,34), Secondary=Color3.fromRGB(57,61,49), Accent=Color3.fromRGB(249,38,114)},
+    {Name="Gruvbox Dark", Primary=Color3.fromRGB(40,40,40), Secondary=Color3.fromRGB(60,56,54), Accent=Color3.fromRGB(215,153,33)},
+    {Name="One Dark", Primary=Color        return "ScriptWare"
     elseif type(getexecutorname)=="function" then
         return getexecutorname()
     elseif type(getexecutor)=="function" then
