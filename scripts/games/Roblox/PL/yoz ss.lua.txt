@@ -1,0 +1,523 @@
+-- ===============================================
+-- YOZ SCRIPTSERVICE | PRISON LIFE FULL GUI v2.6
+-- • Executor Detection
+-- • Random Player Info
+-- • Airplane-style Underground TP
+-- • Normal TP & Gun TP
+-- • Player Mods, Movement, Teleports, Guns, Misc, Visuals
+-- • Mobile Joystick Support for Fly/CarFly (Fly is PC-only)
+-- ===============================================
+
+-- REPO (External UI library)
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+
+-- SERVICES
+local RunService          = game:GetService("RunService")
+local Players             = game:GetService("Players")
+local UserInputService    = game:GetService("UserInputService")
+local Workspace           = game:GetService("Workspace")
+local StarterGui          = game:GetService("StarterGui")
+local LocalizationService = game:GetService("LocalizationService")
+
+-- PLAYER & CHARACTER
+local player = Players.LocalPlayer
+local char   = player.Character or player.CharacterAdded:Wait()
+local hum    = char:WaitForChild("Humanoid")
+local hrp    = char:WaitForChild("HumanoidRootPart")
+
+-- DETECT EXECUTOR
+local function detectExecutor()
+    if type(syn)=="table" and syn.protect_gui then
+        return "Synapse X"
+    elseif type(pebc_execute)=="function" or _G.krnl then
+        return "Krnl"
+    elseif type(is_sirhurt_closure)=="boolean" then
+        return "Sirhurt"
+    elseif type(secure_load)=="function" then
+        return "ScriptWare"
+    elseif type(getexecutorname)=="function" then
+        return getexecutorname()
+    elseif type(getexecutor)=="function" then
+        return getexecutor()
+    else
+        return "Unknown"
+    end
+end
+local executorName = detectExecutor()
+
+-- MOBILE DETECTION FOR JOYSTICK FLY
+local isMobile  = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local isPC      = not isMobile
+local mobileUp  = false
+UserInputService.JumpRequest:Connect(function()
+    if isMobile and Toggles and Toggles.Fly and Toggles.Fly.Value then
+        mobileUp = true
+    end
+end)
+
+-- LOADING NOTIFICATION
+StarterGui:SetCore("SendNotification", {
+    Title    = "Yoz ScriptService";
+    Text     = "Loading GUI… please wait";
+    Duration = 4;
+    Icon     = "rbxassetid://6031075938";
+})
+
+-- LOAD UI LIBRARY
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local Toggles = Library.Toggles
+local Options = Library.Options
+
+-- MAIN WINDOW
+local Window = Library:CreateWindow({
+    Title            = "Yoz ScriptService | Prison Life",
+    ShowCustomCursor = true
+})
+
+-- TABS
+local Tabs = {
+    Main      = Window:AddTab("Main",      "home"),
+    Player    = Window:AddTab("Player",    "shield"),
+    Teleports = Window:AddTab("Teleports", "map-pin"),
+    Guns      = Window:AddTab("Guns",      "zap"),
+    Misc      = Window:AddTab("Misc",      "settings"),
+    Visuals   = Window:AddTab("Visuals",   "eye")
+}
+
+-- SERVER REGION (best-effort)
+local region = "Unknown"
+pcall(function()
+    region = LocalizationService:GetCountryRegionForPlayerAsync(player)
+end)
+
+-- TELEPORT TABLES
+local NormalTPs = {
+    Cafe     = CFrame.new(-36,   20,   362),
+    Yard     = CFrame.new(780,   98,   2459),
+    Prison   = CFrame.new(919,   100,  2379),
+    Cells    = CFrame.new(293,   20,   235),
+    Armory   = CFrame.new(645,   101,  2425),
+    Admin    = CFrame.new(-878,  96,   2143),
+    CrimBase = CFrame.new(-943,  94,   2064)
+}
+local GunTPs = {
+    M9            = CFrame.new(821.5, 100.5, 2336.5),
+    MP5           = CFrame.new(821.5, 100.5, 2330.5),
+    ["Remington 870"] = CFrame.new(821.5, 100.5, 2324.5),
+    ["AK-47"]     = CFrame.new(821.5, 100.5, 2318.5),
+    M4A1          = CFrame.new(821.5, 100.5, 2312.5),
+    Revolver      = CFrame.new(821.5, 100.5, 2306.5),
+    M700          = CFrame.new(821.5, 100.5, 2300.5),
+    FAL           = CFrame.new(821.5, 100.5, 2294.5)
+}
+local guns = {"M9","MP5","Remington 870","AK-47","M4A1","Revolver","M700","FAL"}
+
+-- STATE & CONNECTIONS
+local flySpeed, carFlySpeed  = 50, 100
+local undergroundDepth       = 25
+local hitboxSize             = 10
+local flyConn, carFlyConn, noclipConn, infJumpConn, godConn, invisConn, fastShootConn, rainbowConn
+local espConns, hitboxConn   = {}, nil
+local doorsInvisibleConn     = nil  -- New connection for doors toggle
+
+-- FRAME / PING STATS
+local frameTimes, avgFrame = {}, 0
+RunService.Heartbeat:Connect(function(dt)
+    table.insert(frameTimes, dt*1000)
+    if #frameTimes>30 then table.remove(frameTimes,1) end
+    local s=0 for _,v in ipairs(frameTimes) do s+=v end
+    avgFrame = s/#frameTimes
+end)
+
+-- UTILITIES
+local function setclipboardSafe(txt)
+    pcall(function() if setclipboard then setclipboard(txt) end end)
+end
+local function setTeam(color)
+    pcall(function()
+        Workspace.Remote.TeamEvent:FireServer(color)
+        Workspace.Remote.loadchar:InvokeServer(player.Name)
+    end)
+end
+local function getGun(name)
+    pcall(function()
+        local g=Workspace.Prison_ITEMS.giver:FindFirstChild(name)
+        if g then
+            local p=g:FindFirstChild("ITEMPICKUP")
+            if p then Workspace.Remote.ItemHandler:InvokeServer(p) end
+        end
+    end)
+end
+
+-- AIRPLANE‐STYLE UNDERGROUND TP
+local function undergroundTeleport(cf)
+    if not hrp then return end
+    local steps=20
+    local drop=undergroundDepth
+    local tiltTotal=math.rad(-90)
+    local tiltStep=tiltTotal/steps
+    local dropStep=drop/steps
+    for i=1,steps do
+        hrp.CFrame = hrp.CFrame
+            * CFrame.new(0,-dropStep,0)
+            * CFrame.Angles(tiltStep,0,0)
+        task.wait(0.03)
+    end
+    hrp.CFrame = cf
+end
+
+-- NEW: Toggle Invisible/No-Collide Doors
+local function toggleDoorsInvisible(state)
+    if doorsInvisibleConn then doorsInvisibleConn:Disconnect() doorsInvisibleConn = nil end
+    
+    local function setDoorProperties(part, trans, collide)
+        if part:IsA("BasePart") then
+            part.Transparency = trans
+            part.CanCollide = collide
+        end
+    end
+    
+    local function applyToAllDoors(trans, collide)
+        pcall(function()
+            -- Main doors
+            local doorsFolder = Workspace:FindFirstChild("Doors")
+            if doorsFolder then
+                for _, door in ipairs(doorsFolder:GetDescendants()) do
+                    setDoorProperties(door, trans, collide)
+                end
+            end
+            -- Cell doors
+            local cells = Workspace:FindFirstChild("Prison Cells")
+            if cells then
+                for _, cell in ipairs(cells:GetChildren()) do
+                    local door = cell:FindFirstChild("door")
+                    if door then
+                        setDoorProperties(door, trans, collide)
+                        -- If door is a model, apply to its parts too
+                        for _, part in ipairs(door:GetDescendants()) do
+                            setDoorProperties(part, trans, collide)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    
+    if state then
+        applyToAllDoors(1, false)  -- Invisible and no-collide
+        doorsInvisibleConn = RunService.Heartbeat:Connect(function()
+            applyToAllDoors(1, false)  -- Persist in case game resets properties
+        end)
+    else
+        applyToAllDoors(0, true)  -- Reset to normal
+    end
+end
+
+-- TOGGLE FUNCTIONS --
+
+-- Fly (PC‐only)
+local function toggleFly(state)
+    if not isPC then
+        if Toggles.Fly then Toggles.Fly:Set(false) end
+        return
+    end
+    if flyConn then flyConn:Disconnect() flyConn=nil end
+    
+    -- FIXED: Safe nil-checks for cleanup
+    local bv = hrp:FindFirstChild("BodyVelocity")
+    if bv then bv:Destroy() end
+    local bg = hrp:FindFirstChild("BodyGyro")
+    if bg then bg:Destroy() end
+
+    if not state then return end
+
+    bg=Instance.new("BodyGyro",hrp)
+    bg.MaxTorque=Vector3.new(9e9,9e9,9e9); bg.P=9e4
+    bv=Instance.new("BodyVelocity",hrp)
+    bv.MaxForce=Vector3.new(9e9,9e9,9e9); bv.Velocity=Vector3.new(0,0.1,0)
+
+    flyConn = RunService.Heartbeat:Connect(function()
+        if not Toggles.Fly.Value then return toggleFly(false) end
+        local cam=Workspace.CurrentCamera
+        local move=Vector3.new()
+
+        if isPC then
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move+=cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move-=cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move-=cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move+=cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move+=Vector3.yAxis end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move-=Vector3.yAxis end
+        else
+            local md=hum.MoveDirection
+            local fwd=Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z).Unit
+            local rgt=Vector3.new(cam.CFrame.RightVector.X,0,cam.CFrame.RightVector.Z).Unit
+            move = fwd*md.Z + rgt*md.X
+            if mobileUp then move+=Vector3.yAxis; mobileUp=false end
+        end
+
+        bv.Velocity = (move.Magnitude>0 and move.Unit*flySpeed or Vector3.new(0,0.1,0))
+        bg.CFrame = cam.CFrame
+    end)
+end
+
+-- Car Fly
+local function toggleCarFly(state)
+    if carFlyConn then carFlyConn:Disconnect() carFlyConn=nil end
+    if not state then return end
+
+    carFlyConn = RunService.Heartbeat:Connect(function()
+        if not Toggles.CarFly.Value then return end
+        local seat = char:FindFirstChildOfClass("VehicleSeat")
+        if not seat then return end
+
+        local cam=Workspace.CurrentCamera
+        local move=Vector3.new()
+        if isPC then
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move+=cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move-=cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move-=cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move+=cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move+=Vector3.yAxis end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move-=Vector3.yAxis end
+        else
+            local md=hum.MoveDirection
+            local fwd=Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z).Unit
+            local rgt=Vector3.new(cam.CFrame.RightVector.X,0,cam.CFrame.RightVector.Z).Unit
+            move = fwd*md.Z + rgt*md.X
+            if mobileUp then move+=Vector3.yAxis; mobileUp=false end
+        end
+
+        local vehicle=seat.Parent
+        local root=vehicle.PrimaryPart or seat
+        local bv = root:FindFirstChild("BodyVelocity") or Instance.new("BodyVelocity",root)
+        bv.MaxForce=Vector3.new(1/0,1/0,1/0)
+        bv.Velocity=move.Unit*carFlySpeed
+        vehicle:SetPrimaryPartCFrame(CFrame.new(root.Position)*cam.CFrame.Rotation)
+    end)
+end
+
+-- Noclip
+local function toggleNoclip(state)
+    if noclipConn then noclipConn:Disconnect() noclipConn=nil end
+    if state then
+        noclipConn = RunService.Stepped:Connect(function()
+            for _,p in char:GetDescendants() do
+                if p:IsA("BasePart") then p.CanCollide=false end
+            end
+        end)
+    end
+end
+
+-- Infinite Jump
+local function toggleInfJump(state)
+    if infJumpConn then infJumpConn:Disconnect() infJumpConn=nil end
+    if state then
+        infJumpConn = UserInputService.JumpRequest:Connect(function()
+            hum:ChangeState("Jumping")
+        end)
+    end
+end
+
+-- Godmode
+local function toggleGod(state)
+    if godConn then godConn:Disconnect() godConn=nil end
+    if state then
+        godConn = hum.HealthChanged:Connect(function(h)
+            if h < hum.MaxHealth then hum.Health=hum.MaxHealth end
+        end)
+    end
+end
+
+-- Invisibility
+local function toggleInvis(state)
+    if invisConn then invisConn:Disconnect() invisConn=nil end
+    if state then
+        invisConn = RunService.Heartbeat:Connect(function()
+            for _,o in char:GetDescendants() do
+                if o:IsA("BasePart") or o:IsA("Texture") or o:IsA("Decal") then
+                    o.Transparency=1
+                end
+            end
+        end)
+    else
+        for _,o in char:GetDescendants() do
+            if o:IsA("BasePart") or o:IsA("Texture") or o:IsA("Decal") then
+                o.Transparency=0
+            end
+        end
+    end
+end
+
+-- Fast Shoot
+local function toggleFastShoot(state)
+    if fastShootConn then fastShootConn:Disconnect() fastShootConn=nil end
+    if state then
+        fastShootConn = RunService.Heartbeat:Connect(function()
+            local tool = char:FindFirstChildOfClass("Tool")
+            if tool then
+                local gs = tool:FindFirstChild("GunScript") or tool:FindFirstChildOfClass("LocalScript")
+                if gs and gs:FindFirstChild("Cooldown") then gs.Cooldown.Value=0.05 end
+            end
+        end)
+    end
+end
+
+-- Rainbow Gun
+local function toggleRainbowGun(state)
+    if rainbowConn then rainbowConn:Disconnect() rainbowConn=nil end
+    if state then
+        rainbowConn = RunService.Heartbeat:Connect(function()
+            local tool = char:FindFirstChildOfClass("Tool")
+            if tool then
+                local hue = tick()%5/5
+                for _,p in tool:GetDescendants() do
+                    if p:IsA("BasePart") then p.Color=Color3.fromHSV(hue,1,1) end
+                end
+            end
+        end)
+    end
+end
+
+-- ESP / Hitbox (copy your previous implementations here)
+-- …createESP, toggleESP, toggleHitbox…
+
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- UI SETUP
+
+-- MAIN TAB (Profile, Executor, Stats, Random Player)
+do
+    local left1 = Tabs.Main:AddLeftGroupbox("Profile")
+    left1:AddLabel("Username: "    .. player.Name)
+    left1:AddLabel("DisplayName: " .. player.DisplayName)
+    left1:AddLabel("User ID: "     .. player.UserId)
+    left1:AddLabel("Account Age: " .. math.floor(player.AccountAge) .. " days")
+
+    local left2 = Tabs.Main:AddLeftGroupbox("Environment")
+    left2:AddLabel("Executor: " .. executorName)
+
+    local right1 = Tabs.Main:AddRightGroupbox("Server Stats")
+    local lblP = right1:AddLabel("Players: 0")
+    local lblF = right1:AddLabel("Frame: 0 ms")
+    local lblR = right1:AddLabel("Region: " .. region)
+    RunService.Heartbeat:Connect(function()
+        lblP:Set("Players: " .. #Players:GetPlayers())
+        lblF:Set(string.format("Frame: %.1f ms", avgFrame))
+    end)
+
+    local right2 = Tabs.Main:AddRightGroupbox("Random Player")
+    local rndName = right2:AddLabel("Name: --")
+    local rndID   = right2:AddLabel("User ID: --")
+    local function refreshRandom()
+        local pls = Players:GetPlayers()
+        if #pls>0 then
+            local r=pls[math.random(1,#pls)]
+            rndName:Set("Name: " .. r.Name .. " (".. r.DisplayName ..")")
+            rndID:  Set("User ID: " .. r.UserId)
+        end
+    end
+    right2:AddButton({Text="Refresh Random", Func=refreshRandom})
+    refreshRandom()
+end
+
+-- PLAYER TAB
+do
+    local plL = Tabs.Player:AddLeftGroupbox("Player Mods")
+    plL:AddSlider("WalkSpeed", {Text="Walk Speed", Min=16,Max=200,Default=16,Callback=function(v) hum.WalkSpeed=v end})
+    plL:AddSlider("JumpPower",{Text="Jump Power",Min=50,Max=200,Default=50,Callback=function(v) hum.JumpPower=v end})
+    plL:AddToggle("Godmode",{Text="Godmode",Default=false,Callback=toggleGod})
+    plL:AddToggle("InfiniteJump",{Text="Infinite Jump",Default=false,Callback=toggleInfJump})
+    plL:AddToggle("Invisibility",{Text="Invisibility",Default=false,Callback=toggleInvis})
+
+    local plR = Tabs.Player:AddRightGroupbox("Movement")
+    if isPC then
+        plR:AddToggle("Fly",{Text="Fly",Default=false,Callback=toggleFly})
+        plR:AddSlider("FlySpeed",{Text="Fly Speed",Min=1,Max=200,Default=50,Callback=function(v) flySpeed=v end})
+    end
+    plR:AddToggle("Noclip",{Text="Noclip",Default=false,Callback=toggleNoclip})
+    plR:AddToggle("CarFly",{Text="Car Fly",Default=false,Callback=toggleCarFly})
+    plR:AddSlider("CarFlySpeed",{Text="Car Fly Speed",Min=50,Max=300,Default=100,Callback=function(v) carFlySpeed=v end})
+end
+
+-- TELEPORTS TAB
+do
+    local tL = Tabs.Teleports:AddLeftGroupbox("Locations")
+    for name,cf in pairs(NormalTPs) do
+        tL:AddButton({Text=name,Func=function() undergroundTeleport(cf) end})
+    end
+    local tR = Tabs.Teleports:AddRightGroupbox("Gun Givers TP")
+    for name,cf in pairs(GunTPs) do
+        tR:AddButton({Text=name,Func=function() undergroundTeleport(cf) end})
+    end
+end
+
+-- GUNS TAB
+do
+    local gL = Tabs.Guns:AddLeftGroupbox("Get Weapons")
+    for _,gn in ipairs(guns) do
+        gL:AddButton({Text="Get "..gn, Func=function() getGun(gn) end})
+    end
+    local gR = Tabs.Guns:AddRightGroupbox("Gun Mods")
+    gR:AddToggle("FastShoot",{Text="Fast Shoot",Default=false,Callback=toggleFastShoot})
+    gR:AddToggle("RainbowGun",{Text="Rainbow Gun",Default=false,Callback=toggleRainbowGun})
+    local gT = Tabs.Guns:AddRightGroupbox("Team")
+    gT:AddButton({Text="Prisoner", Func=function() setTeam("Bright orange") end})
+    gT:AddButton({Text="Guard",    Func=function() setTeam("Bright blue")   end})
+    gT:AddButton({Text="Criminal", Func=function() setTeam("Really black") end})
+end
+
+-- MISC TAB
+do
+    local mL = Tabs.Misc:AddLeftGroupbox("Fun")
+    -- NEW: Replaced "Remove Doors" button with toggle for invisible/no-collide doors
+    mL:AddToggle("InvisibleDoors", {Text="Invisible Doors", Default=false, Callback=toggleDoorsInvisible})
+    mL:AddButton({Text="Kill All", Func=function()
+        for _,plr in ipairs(Players:GetPlayers()) do
+            if plr~=player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local r=plr.Character.HumanoidRootPart
+                r.AssemblyLinearVelocity=Vector3.new(0,math.huge,0)
+                r.AssemblyAngularVelocity=Vector3.new(math.huge,math.huge,math.huge)
+            end
+        end
+    end})
+    mL:AddButton({Text="Copy Discord Invite", Func=function()
+        setclipboardSafe("https://discord.gg/BjJf2bKxBk")
+        StarterGui:SetCore("SendNotification", {
+            Title="Yoz ScriptService";
+            Text="Discord invite copied!";
+            Duration=3;
+        })
+    end})
+end
+
+-- VISUALS TAB
+do
+    local vL = Tabs.Visuals:AddLeftGroupbox("ESP")
+    vL:AddToggle("ESP",{Text="Player ESP",Default=false,Callback=toggleESP})
+    local vR = Tabs.Visuals:AddRightGroupbox("Hitbox Expander")
+    vR:AddToggle("HitboxExpander",{Text="Expand Hitboxes",Default=false,Callback=toggleHitbox})
+    vR:AddSlider("HitboxSize",{Text="Hitbox Size",Min=5,Max=50,Default=10,Callback=function(v) hitboxSize=v end})
+end
+
+-- REAPPLY ON CHARACTER RESPAWN
+player.CharacterAdded:Connect(function(c)
+    task.wait(1)
+    char = c
+    hum  = char:WaitForChild("Humanoid")
+    hrp  = char:WaitForChild("HumanoidRootPart")
+    hum.WalkSpeed  = Options.WalkSpeed.Value
+    hum.JumpPower  = Options.JumpPower.Value
+    toggleGod(Toggles.Godmode.Value)
+    toggleInfJump(Toggles.InfiniteJump.Value)
+    toggleFly(Toggles.Fly.Value)
+    toggleNoclip(Toggles.Noclip.Value)
+    toggleInvis(Toggles.Invisibility.Value)
+    toggleCarFly(Toggles.CarFly.Value)
+    toggleFastShoot(Toggles.FastShoot.Value)
+    toggleRainbowGun(Toggles.RainbowGun.Value)
+    if Toggles.ESP.Value            then toggleESP(true)    end
+    if Toggles.HitboxExpander.Value then toggleHitbox(true) end
+end)
+
+print("Yoz ScriptService | Prison Life GUI v2.6 Loaded!")
